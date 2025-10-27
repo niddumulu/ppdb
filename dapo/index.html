@@ -19,22 +19,17 @@
       border-radius: 5px;
       cursor: pointer;
     }
-    button:hover {
-      background: #0056b3;
-    }
+    button:hover { background: #0056b3; }
     .error { color: red; margin-top: 20px; }
     #rekap { margin-top: 40px; }
-    tfoot td {
-      font-weight: bold;
-      background-color: #e6f0ff;
-    }
+    tfoot td { font-weight: bold; background-color: #e6f0ff; }
   </style>
 </head>
 <body>
   <h2>Rekap Jenis Kelamin per Rombel</h2>
   <input type="file" id="fileInput" accept=".xlsx, .xls, .csv" />
   <button id="toggleData" style="display:none;">Sembunyikan Data Rincian</button>
-  
+
   <div id="output"></div>
   <div id="rekap"></div>
   <div id="errorMsg" class="error"></div>
@@ -46,8 +41,6 @@
     const errorMsg = document.getElementById("errorMsg");
     const toggleDataBtn = document.getElementById("toggleData");
 
-    let dataTersimpan = [];
-
     fileInput.addEventListener("change", (event) => {
       const file = event.target.files[0];
       if (!file) return;
@@ -56,18 +49,39 @@
       reader.onload = (e) => {
         const data = new Uint8Array(e.target.result);
         const workbook = XLSX.read(data, { type: "array" });
-        const sheetName = workbook.SheetNames[0];
-        const sheet = workbook.Sheets[sheetName];
-        const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
 
-        if (json.length === 0) {
+        if (allRows.length === 0) {
           errorMsg.textContent = "File kosong atau tidak terbaca.";
           return;
         }
 
-        errorMsg.textContent = "";
-        dataTersimpan = json;
+        // 🔍 Cari baris yang mengandung header "Rombel" dan "JK"
+        let headerRowIndex = -1;
+        for (let i = 0; i < allRows.length; i++) {
+          const row = allRows[i].map(v => v.toString().toLowerCase());
+          if (row.some(v => v.includes("rombel")) && row.some(v => v.includes("jk"))) {
+            headerRowIndex = i;
+            break;
+          }
+        }
 
+        if (headerRowIndex === -1) {
+          errorMsg.innerHTML = "❌ Tidak menemukan baris header yang berisi kolom 'Rombel' dan 'JK'.<br>Pastikan file sudah benar.";
+          return;
+        }
+
+        // Ambil data mulai dari baris header tersebut
+        const headers = allRows[headerRowIndex];
+        const dataRows = allRows.slice(headerRowIndex + 1);
+        const json = dataRows.map(row => {
+          const obj = {};
+          headers.forEach((h, idx) => obj[h] = row[idx] || "");
+          return obj;
+        });
+
+        errorMsg.textContent = "";
         displayTable(json);
         buatRekap(json);
         toggleDataBtn.style.display = "inline-block";
@@ -75,7 +89,6 @@
       reader.readAsArrayBuffer(file);
     });
 
-    // Tombol untuk sembunyikan/tampilkan tabel detail
     toggleDataBtn.addEventListener("click", () => {
       if (outputDiv.style.display === "none") {
         outputDiv.style.display = "block";
@@ -86,7 +99,6 @@
       }
     });
 
-    // Tampilkan isi data mentah
     function displayTable(data) {
       const headers = Object.keys(data[0]);
       let table = "<h3>Data Siswa</h3><table><thead><tr>";
@@ -102,13 +114,12 @@
       outputDiv.innerHTML = table;
     }
 
-    // Buat rekap jenis kelamin per rombel
     function buatRekap(data) {
       const headers = Object.keys(data[0]);
       const findHeader = (target) => headers.find(h => h.toLowerCase().replace(/\s+/g, '') === target.toLowerCase().replace(/\s+/g, ''));
 
-      const kolomRombel = findHeader("rombelsaatini");
-      const kolomJK = findHeader("jk");
+      const kolomRombel = findHeader("rombelsaatini") || headers.find(h => h.toLowerCase().includes("rombel"));
+      const kolomJK = findHeader("jk") || headers.find(h => h.toLowerCase().includes("jk"));
 
       if (!kolomRombel || !kolomJK) {
         rekapDiv.innerHTML = "";
@@ -130,9 +141,7 @@
         else if (jk === "P" || jk === "PEREMPUAN") hasil[rombel].P++;
       });
 
-      // Hitung total keseluruhan
       let totalL = 0, totalP = 0;
-
       let table = "<h3>Rekap Jenis Kelamin per Rombel</h3>";
       table += "<table><thead><tr><th>Rombel</th><th>Laki-laki (L)</th><th>Perempuan (P)</th><th>Total</th></tr></thead><tbody>";
 
@@ -143,10 +152,11 @@
         table += `<tr><td>${rombel}</td><td>${L}</td><td>${P}</td><td>${L + P}</td></tr>`;
       }
 
-      table += `</tbody>
-      <tfoot>
-        <tr><td><b>Total Keseluruhan</b></td><td>${totalL}</td><td>${totalP}</td><td>${totalL + totalP}</td></tr>
-      </tfoot>
+      table += `
+        </tbody>
+        <tfoot>
+          <tr><td><b>Total Keseluruhan</b></td><td>${totalL}</td><td>${totalP}</td><td>${totalL + totalP}</td></tr>
+        </tfoot>
       </table>`;
 
       rekapDiv.innerHTML = table;
