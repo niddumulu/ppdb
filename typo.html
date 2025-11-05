@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Typoglycaemia Generator — MadGazan</title>
+  <style>
+    :root {
+      --bg: #f7f7fb;
+      --card: #ffffff;
+      --accent: #2b6cb0;
+      --muted: #6b7280;
+      --glass: rgba(43,108,176,0.08);
+    }
+    body {
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      background: linear-gradient(180deg,var(--bg),#eef2ff 100%);
+      margin: 0;
+      padding: 28px;
+      color: #111827;
+    }
+    .wrap {
+      max-width: 980px;
+      margin: 0 auto;
+    }
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 18px;
+      box-shadow: 0 6px 18px rgba(15,23,42,0.06);
+      margin-bottom: 16px;
+    }
+    h1 { margin: 0 0 8px 0; font-size: 20px; }
+    p.lead { margin:0 0 14px 0; color: var(--muted); font-size: 14px; }
+    textarea {
+      width: 100%;
+      min-height: 160px;
+      resize: vertical;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #e6e9ef;
+      font-size: 15px;
+      line-height: 1.6;
+      box-sizing: border-box;
+      background: linear-gradient(180deg, #fff, #fbfdff);
+    }
+    .controls {
+      display:flex;
+      gap:8px;
+      margin-top:8px;
+      flex-wrap:wrap;
+    }
+    button {
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+      font-size: 14px;
+      box-shadow: 0 3px 8px rgba(43,108,176,0.18);
+    }
+    button.ghost {
+      background: transparent;
+      color: var(--accent);
+      border: 1px solid rgba(43,108,176,0.12);
+      box-shadow: none;
+    }
+    button.warn { background: #d97706; box-shadow: 0 3px 8px rgba(217,119,6,0.18); }
+    .output {
+      white-space: pre-wrap;
+      font-size: 16px;
+      line-height: 1.6;
+      min-height: 120px;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px dashed #e6e9ef;
+      background: var(--glass);
+      color: #0f172a;
+      margin-top: 10px;
+    }
+    .meta { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:10px; flex-wrap:wrap; }
+    .hint { color:var(--muted); font-size:13px; }
+    .btn-small { padding:6px 10px; font-size:13px; border-radius:6px; }
+    .footer { color:var(--muted); font-size:13px; margin-top:10px; text-align:right; }
+    @media (max-width:560px){
+      .controls { flex-direction:column; align-items:stretch; }
+      .meta { flex-direction:column; align-items:flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Typoglycaemia Generator</h1>
+      <p class="lead">Masukkan kalimat panjang pada kotak di bawah. Sistem akan mempertahankan huruf pertama & terakhir tiap kata, lalu mengacak huruf-huruf di antaranya. Hasil bisa dicopy langsung.</p>
+
+      <label for="input">Input (ketik atau paste teks panjang):</label>
+      <textarea id="input" placeholder="Tulis kalimat panjang di sini... Contoh: Typoglycaemia adalah sesuatu yang menyenangkan, bukan?"></textarea>
+
+      <div class="controls">
+        <button id="randomize" class="btn-small">🔀 Randomize (acak ulang)</button>
+        <button id="copy" class="btn-small">📋 Copy Hasil</button>
+        <button id="select" class="btn-small ghost">🔍 Select All</button>
+        <button id="clear" class="btn-small ghost">✖ Clear</button>
+        <button id="help" class="btn-small ghost">❔ Petunjuk</button>
+      </div>
+
+      <div class="meta">
+        <div class="hint" id="stats">Kata: 0 • Karakter: 0</div>
+        <div class="hint">Aturan: kata panjang ≤3 tidak diacak; tanda baca di depan/akhir dipertahankan.</div>
+      </div>
+
+      <div style="margin-top:10px;">
+        <div id="output" class="output" contenteditable="false" aria-label="Hasil typoglycaemia"></div>
+      </div>
+
+      <div class="footer">MadGazan Studio — Typoglycaemia</div>
+    </div>
+  </div>
+
+  <script>
+    // Utility: Fisher-Yates shuffle
+    function shuffleArray(arr) {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    // Transform single "core" word: keep first & last char, shuffle interior
+    function typoglycemiaWord(core) {
+      // If short, return as-is
+      if (core.length <= 3) return core;
+
+      // If all same char (e.g., "aaaa"), nothing to shuffle
+      const middle = core.slice(1, -1).split('');
+      if (middle.length <= 1) return core;
+
+      // Shuffle keeping characters (case preserved because we shuffle chars)
+      shuffleArray(middle);
+      return core[0] + middle.join('') + core.slice(-1);
+    }
+
+    // Process full text, preserve whitespace and leading/trailing punctuation
+    // We'll split by whitespace but keep whitespace tokens: split(/(\s+)/)
+    // For each token that is not pure whitespace, extract leading/trailing punctuation and core word.
+    const coreWordRegex = /^([^A-Za-z0-9'’\-]*)([A-Za-z0-9'’\-]+)([^A-Za-z0-9'’\-]*)$/;
+
+    function typoglycemiaText(input) {
+      // We split by whitespace but keep it so spaces/newlines preserved
+      const tokens = input.split(/(\s+)/);
+      const out = tokens.map(token => {
+        if (/^\s+$/.test(token) || token === '') return token; // whitespace
+        // Try to match core word
+        const m = token.match(coreWordRegex);
+        if (!m) {
+          // e.g., token is only punctuation or weird symbols, return as-is
+          return token;
+        }
+        const leading = m[1] || '';
+        const core = m[2] || '';
+        const trailing = m[3] || '';
+
+        // If core contains hyphenated parts like "state-of-the-art", we want to process each subpart
+        if (core.includes('-')) {
+          const parts = core.split('-').map(sub => typoglycemiaWord(sub));
+          return leading + parts.join('-') + trailing;
+        } else {
+          return leading + typoglycemiaWord(core) + trailing;
+        }
+      });
+      return out.join('');
+    }
+
+    // DOM
+    const inputEl = document.getElementById('input');
+    const outputEl = document.getElementById('output');
+    const randomizeBtn = document.getElementById('randomize');
+    const copyBtn = document.getElementById('copy');
+    const selectBtn = document.getElementById('select');
+    const clearBtn = document.getElementById('clear');
+    const helpBtn = document.getElementById('help');
+    const statsEl = document.getElementById('stats');
+
+    // Update function: produce typoglycaemia from input value
+    function updateOutput() {
+      const text = inputEl.value;
+      const result = typoglycemiaText(text);
+      outputEl.textContent = result;
+
+      // update stats
+      const wordCount = text.trim().length ? text.trim().split(/\s+/).length : 0;
+      statsEl.textContent = `Kata: ${wordCount} • Karakter: ${text.length}`;
+    }
+
+    // When typing, update live
+    inputEl.addEventListener('input', () => {
+      updateOutput();
+    });
+
+    // Randomize: re-apply typoglycaemia to current output (so internal letters shuffle again)
+    randomizeBtn.addEventListener('click', () => {
+      // We randomize based on the ORIGINAL input, not on the current output,
+      // to avoid gradually degrading first/last letters. So reapply to input.
+      updateOutput();
+    });
+
+    // Copy with clipboard API and fallback
+    copyBtn.addEventListener('click', async () => {
+      const text = outputEl.textContent;
+      if (!text) {
+        alert('Belum ada hasil untuk dicopy.');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+        copyBtn.textContent = '✅ Copied';
+        setTimeout(() => (copyBtn.textContent = '📋 Copy Hasil'), 1400);
+      } catch (e) {
+        // fallback: create textarea
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          copyBtn.textContent = '✅ Copied';
+          setTimeout(() => (copyBtn.textContent = '📋 Copy Hasil'), 1400);
+        } catch (err) {
+          alert('Gagal menyalin: ' + err);
+        }
+      }
+    });
+
+    // Select all output (for manual copy)
+    selectBtn.addEventListener('click', () => {
+      // Use Range to select output element's text
+      const range = document.createRange();
+      range.selectNodeContents(outputEl);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    });
+
+    clearBtn.addEventListener('click', () => {
+      inputEl.value = '';
+      updateOutput();
+      inputEl.focus();
+    });
+
+    helpBtn.addEventListener('click', () => {
+      alert(
+        'Petunjuk singkat:\\n' +
+        '- Ketik/paste teks di kotak input.\\n' +
+        '- Sistem secara otomatis menghasilkan typoglycaemia.\\n' +
+        "- Tombol 'Randomize' mengacak ulang huruf-huruf bagian dalam per kata.\\n" +
+        "- Kata pendek (≤3 huruf) tidak diacak.\\n" +
+        "- Tanda baca di awal/akhir kata tetap dipertahankan."
+      );
+    });
+
+    // Initialize with example
+    inputEl.value = "Typoglycaemia adalah contoh di mana huruf-huruf di tengah kata diacak, tetapi huruf pertama dan terakhir tetap berada di tempatnya, jadi teks tetap bisa dibaca.";
+    updateOutput();
+  </script>
+</body>
+</html>
